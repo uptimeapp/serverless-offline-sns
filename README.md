@@ -1,3 +1,5 @@
+# a forked version of serverless-offline-sns to support lambda events defined using the sqs-from-sns plugin
+
 # serverless-offline-sns
 A serverless plugin to listen to offline SNS and call lambda fns with events.
 
