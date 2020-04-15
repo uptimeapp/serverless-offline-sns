@@ -132,8 +132,12 @@ class ServerlessOfflineSns {
         await this.unsubscribeAll();
         this.debug("subscribing");
         await Promise.all(Object.keys(this.serverless.service.functions).map(fnName => {
-            const fn = this.serverless.service.functions[fnName];
-            return Promise.all(fn.events.filter(event => event.sns != null).map(event => {
+            const fn = this.serverless.service.functions[fnName];            
+            return Promise.all(fn.events.filter(event => event.sns != null || event["sqs-from-sns"]).map(event => {
+                if (event["sqs-from-sns"]) {
+                    const sns = event["sqs-from-sns"];
+                    return this.subscribe(fnName, {...sns, arn: sns.topicArn});
+                }
                 return this.subscribe(fnName, event.sns);
             }));
         }));
@@ -166,7 +170,7 @@ class ServerlessOfflineSns {
         } else if (snsConfig.arn && typeof snsConfig.arn === "string") {
             topicName = topicNameFromArn(snsConfig.arn);
         }
-
+        
         if (!topicName) {
             this.log(`Unable to create topic for "${fnName}". Please ensure the sns configuration is correct.`);
             return Promise.resolve(`Unable to create topic for "${fnName}". Please ensure the sns configuration is correct.`);

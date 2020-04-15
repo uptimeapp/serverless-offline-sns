@@ -48,6 +48,14 @@ describe("test", () => {
         expect(state.getPongs()).to.eq(2);
     });
 
+    it("should send event to target ARN with sqs-from-sns", async () => {
+        plugin = new ServerlessOfflineSns(createServerlessSqsFromSns(accountId), {skipCacheInvalidation: true});
+        const snsAdapter = await plugin.start();
+        await snsAdapter.publishToTargetArn(`arn:aws:sns:us-east-1:${accountId}:test-topic`, "{}");
+        await new Promise(res => setTimeout(res, 100));
+        expect(state.getPongs()).to.eq(1);
+    });
+
     it("should send event with pseudo parameters", async () => {
         plugin = new ServerlessOfflineSns(createServerless(accountId), {skipCacheInvalidation: true});
         const snsAdapter = await plugin.start();
@@ -227,6 +235,22 @@ describe("test", () => {
         const event = state.getEvent();
         expect(event.Records[0].Sns.Message).to.not.be.empty;
     });
+
+    it("should send event when filter policies exist and pass for sqs-from-sns", async () => {
+        plugin = new ServerlessOfflineSns(createServerlessWithFilterPoliciesSqsFromSns(accountId), {skipCacheInvalidation: true});
+        const snsAdapter = await plugin.start();
+        await snsAdapter.publish(
+            `arn:aws:sns:us-east-1:${accountId}:test-topic-policies`,
+            "message with filter params",
+            "raw",
+            {
+                foo: { DataType: "String", StringValue: "bar" },
+            },
+        );
+        await new Promise(res => setTimeout(res, 100));
+        const event = state.getEvent();
+        expect(event.Records[0].Sns.Message).to.not.be.empty;
+    });    
 
     it("should not send event when multiple filter policies exist and the message only contains one", async () => {
         plugin = new ServerlessOfflineSns(createServerlessWithFilterPolicies(accountId), {});
@@ -539,4 +563,37 @@ const createServerlessWithFilterPolicies = (accountId: number, handlerName: stri
             },
         },
     };
+};
+
+const createServerlessWithFilterPoliciesSqsFromSns = (accountId: number, handlerName: string = "pongHandler", host: string = null, subscribeEndpoint = null) => {
+    const serverlessConfig = createServerlessWithFilterPolicies(accountId, handlerName, host, subscribeEndpoint);
+    const {functions} = serverlessConfig
+        .service;
+    convertFunctionsSnsEventsToSqsFromSns(functions);
+    return serverlessConfig;
+};
+
+const createServerlessSqsFromSns = (accountId: number, handlerName: string = "pongHandler", host: string = null, subscribeEndpoint = null) => {
+    const serverlessConfig = createServerless(accountId, handlerName, host, subscribeEndpoint);
+    const {functions} = serverlessConfig
+        .service;
+    convertFunctionsSnsEventsToSqsFromSns(functions);
+    return serverlessConfig;
+};
+
+const convertFunctionsSnsEventsToSqsFromSns = (functions: any) => {
+    Object.keys(functions)
+    .forEach(key => {
+        const fn = functions[key];
+        fn.events = fn.events.map((event) => {
+            const sns = event.sns;
+            if (sns.arn) {
+                sns.topicArn = sns.arn;
+                delete sns.arn;
+            }
+            return {
+                "sqs-from-sns": sns,
+            };
+        });
+    });
 };
